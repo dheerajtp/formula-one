@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+:root {
+  /* Fixed dark palette: this is a timing tower, not a light-mode document. */
+  --background: #07080a;
+  --foreground: #e9ebee;
+  --card: #0e1116;
+  --card-foreground: #e9ebee;
+  --popover: #0e1116;
+  --popover-foreground: #e9ebee;
+  --primary: #e10600;
+  --primary-foreground: #ffffff;
+  --secondary: #171c24;
+  --secondary-foreground: #e9ebee;
+  --muted: #141a22;
+  --muted-foreground: #8b949f;
+  --accent: #171c24;
+  --accent-foreground: #e9ebee;
+  --destructive: #ff6467;
+  --border: #ffffff14;
+  --input: #ffffff26;
+  --ring: #e10600;
+  --chart-1: #e10600;
+  --chart-2: #27f4d2;
+  --chart-3: #ff8700;
+  --chart-4: #6692ff;
+  --chart-5: #52e252;
+  --radius: 0.125rem;
+  --sidebar: #0e1116;
+  --sidebar-foreground: #e9ebee;
+  --sidebar-primary: #e10600;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #171c24;
+  --sidebar-accent-foreground: #e9ebee;
+  --sidebar-border: #ffffff14;
+  --sidebar-ring: #e10600;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Barlow Semi Condensed", "Barlow", Arial, Helvetica, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Timing numerals read as data, not prose. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Broadcast-style uppercase label chips. */
+.label-caps {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replay-anim {
+    transition: none !important;
+  }
+}
