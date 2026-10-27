@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+*.swp
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+*.lcov
+
+# Caches
+.cache/
+.vite/
+.turbo/
+
+# Qoder local sites
+.qoder-sites/
+.qoder-sites.json
+
+# Editor / IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+
+# Deno
+.deno/
+
+# Temp files
+*.tmp
+*.temp
