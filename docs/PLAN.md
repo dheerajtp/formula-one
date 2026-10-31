@@ -6,6 +6,8 @@
 | 01 | [Telemetry and pit strategy](plans/01-telemetry-strategy/00-README.md) | Race-page telemetry browsing plus measured pit strategy and an upcoming-race baseline; requires OpenF1 (completed sessions only) and the existing Jolpica client. |
 | 02 | [Best laps and pit stops](plans/02-best-laps-pit-stops/00-README.md) | Season race-fastest-lap records, circuit race-lap records, official pit-lane transit and OpenF1 stationary crew times where published; builds on plan 01's OpenF1 client. |
 | 03 | [Weekend pit strategy](plans/03-weekend-pit-strategy/00-README.md) | Pit strategy panel on the Weekend page: historical baseline before/during the race, compact actual strategy once OpenF1 publishes it, deep link to Race → Strategy; reuses plan 01's engine. |
+| 04 | [Telemetry explained](plans/04-telemetry-explained/00-README.md) | "Explain this lap" guide on the Race → Telemetry tab: channel key and lap story written from the lap's own data, braking-zone/straight markers on chart and track map, and compare-with-another-lap overlay with time delta. |
+| 05 | [Race fastest laps and pit stops](plans/05-race-laps-and-stops/00-README.md) | Per-race `Fastest laps` and `Pit stops` tabs on the Race page: every driver's best lap with circuit-record context and telemetry jump; official pit-lane transit joined with OpenF1 stationary crew time and a per-team crew summary. |
 
 ## Boundaries
 - All runtime data reads stay in the browser and remain credential-free.

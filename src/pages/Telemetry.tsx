@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Empty, ErrorBlock, Loading, Panel } from "@/components/Bits";
 import { TelemetryChart } from "@/components/TelemetryChart";
+import { ChannelKey, LapEventMap, LapStory, ReadingNote } from "@/components/TelemetryGuide";
 import { teamColor } from "@/lib/colors";
 import { formatLapTime } from "@/lib/format";
 import { getRaceResults, type Race, type RaceResult } from "@/lib/jolpica";
@@ -12,8 +13,9 @@ import {
   type OpenF1Driver,
   type OpenF1Lap,
 } from "@/lib/openf1";
-import { CIRCUITS } from "@/lib/staticData";
+import { CIRCUITS, type CircuitOutline } from "@/lib/staticData";
 import { buildTelemetryTrace } from "@/lib/telemetry";
+import { buildLapDelta, buildLapInsights, matchZones } from "@/lib/telemetryInsights";
 import { useAsync } from "@/lib/useAsync";
 
 type TimedLap = OpenF1Lap & { lap_duration: number };
@@ -31,13 +33,52 @@ function isTimed(lap: OpenF1Lap): lap is TimedLap {
   return typeof lap.lap_duration === "number" && Number.isFinite(lap.lap_duration) && lap.lap_duration > 0;
 }
 
+const EXPLAIN_KEY = "f1-telemetry-explain";
+/** Muted stroke for the comparison lap so the selected lap stays dominant. */
+const COMPARE_COLOR = "#c9d1d9";
+
+function readExplain(): boolean {
+  try {
+    return localStorage.getItem(EXPLAIN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeExplain(on: boolean) {
+  try {
+    localStorage.setItem(EXPLAIN_KEY, on ? "1" : "0");
+  } catch {
+    /* storage blocked — the toggle still works for this visit */
+  }
+}
+
+interface CompareTarget {
+  row: DriverRow;
+  lap: TimedLap;
+}
+
 function driverColor(driver: OpenF1Driver, result: RaceResult | null): string {
   const feed = driver.team_colour?.trim().replace(/^#/, "");
   if (feed) return `#${feed}`;
   return result ? teamColor(result.Constructor.constructorId) : teamColor("");
 }
 
-export function TelemetryPanel({ season, round, race }: { season: number; round: number; race: Race }) {
+export function TelemetryPanel({
+  season,
+  round,
+  race,
+  initialDriverCode,
+  initialLap,
+}: {
+  season: number;
+  round: number;
+  race: Race;
+  /** Preselect this driver (OpenF1 `name_acronym`) until the user picks another. */
+  initialDriverCode?: string;
+  /** Preselect this lap of the preselected driver when it is a timed lap. */
+  initialLap?: number;
+}) {
   const session = useAsync(async () => {
     const resolved = await resolveRaceSession(season, race);
     if (!resolved) return { resolved: null, drivers: [], laps: [], results: [] };
@@ -88,11 +129,28 @@ export function TelemetryPanel({ season, round, race }: { season: number; round:
   }, [session.data]);
 
   const [selectedDriver, setSelectedDriver] = useState<number | null>(null);
+  const [explain, setExplain] = useState<boolean>(readExplain);
+  /** "none", "fastest" (session fastest lap) or a driver number as a string. */
+  const [compareChoice, setCompareChoice] = useState<string>("none");
+  const [compareLapNumber, setCompareLapNumber] = useState<number | null>(null);
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
 
-  const current = rows.find((row) => row.driver.driver_number === selectedDriver) ?? rows[0] ?? null;
+  // A deep link preselects a driver/lap; an unknown code or lap falls back to the default.
+  const initialRow = initialDriverCode
+    ? rows.find((row) => row.driver.name_acronym?.toUpperCase() === initialDriverCode.toUpperCase())
+    : undefined;
+  const current =
+    rows.find((row) => row.driver.driver_number === selectedDriver) ??
+    (selectedDriver === null ? initialRow : undefined) ??
+    rows[0] ??
+    null;
   const currentLap =
-    current?.laps.find((lap) => lap.lap_number === selectedLap) ?? current?.fastest ?? null;
+    current?.laps.find((lap) => lap.lap_number === selectedLap) ??
+    (selectedLap === null && current === initialRow
+      ? current?.laps.find((lap) => lap.lap_number === initialLap)
+      : undefined) ??
+    current?.fastest ??
+    null;
   const lapIndex = current && currentLap ? current.laps.indexOf(currentLap) : -1;
 
   function chooseDriver(driverNumber: number) {
@@ -128,6 +186,21 @@ export function TelemetryPanel({ season, round, race }: { season: number; round:
   }
 
   const sessionKey = session.data.resolved.session.session_key;
+  const sessionFastest = rows.reduce((best, row) => (row.fastest.lap_duration < best.fastest.lap_duration ? row : best));
+  const compareRow =
+    compareChoice === "none"
+      ? null
+      : compareChoice === "fastest"
+        ? sessionFastest
+        : rows.find((row) => String(row.driver.driver_number) === compareChoice) ?? null;
+  const compareTarget: CompareTarget | null = compareRow
+    ? {
+        row: compareRow,
+        lap:
+          (compareChoice !== "fastest" && compareRow.laps.find((lap) => lap.lap_number === compareLapNumber)) ||
+          compareRow.fastest,
+      }
+    : null;
   const recordedLength = CIRCUITS.get(race.Circuit.circuitId)?.outline.length ?? null;
   const driverLabelId = "telemetry-driver";
   const lapLabelId = "telemetry-lap";
@@ -186,6 +259,56 @@ export function TelemetryPanel({ season, round, race }: { season: number; round:
               Next lap →
             </button>
           </div>
+          <label htmlFor="telemetry-compare" className="flex flex-col gap-1">
+            <span className="label-caps text-[10px] text-muted-foreground">Compare with</span>
+            <select
+              id="telemetry-compare"
+              value={compareChoice}
+              onChange={(event) => {
+                setCompareChoice(event.target.value);
+                setCompareLapNumber(null);
+              }}
+              className="min-w-[10rem] border border-border bg-secondary px-2 py-1.5 text-sm"
+            >
+              <option value="none">Nothing</option>
+              <option value="fastest">Session fastest lap</option>
+              {rows.map((row) => (
+                <option key={row.driver.driver_number} value={String(row.driver.driver_number)}>
+                  {row.driver.name_acronym}
+                </option>
+              ))}
+            </select>
+          </label>
+          {compareRow && compareChoice !== "fastest" && (
+            <label htmlFor="telemetry-compare-lap" className="flex flex-col gap-1">
+              <span className="label-caps text-[10px] text-muted-foreground">Their lap</span>
+              <select
+                id="telemetry-compare-lap"
+                value={compareTarget?.lap.lap_number ?? ""}
+                onChange={(event) => setCompareLapNumber(Number(event.target.value))}
+                className="min-w-[9rem] border border-border bg-secondary px-2 py-1.5 text-sm"
+              >
+                {compareRow.laps.map((lap) => (
+                  <option key={lap.lap_number} value={lap.lap_number}>
+                    Lap {lap.lap_number} · {formatLapTime(lap.lap_duration * 1000)}
+                    {lap.lap_number === compareRow.fastest.lap_number ? " (fastest)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="flex items-center gap-2 self-center border border-border px-3 py-1.5 text-xs">
+            <input
+              type="checkbox"
+              checked={explain}
+              onChange={(event) => {
+                setExplain(event.target.checked);
+                writeExplain(event.target.checked);
+              }}
+              className="accent-[var(--color-primary,#e10600)]"
+            />
+            Explain this lap
+          </label>
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
           {current.laps.length} timed laps for {current.driver.name_acronym}. Car data is fetched for one lap at a time.
@@ -198,6 +321,9 @@ export function TelemetryPanel({ season, round, race }: { season: number; round:
         row={current}
         lap={currentLap}
         recordedLength={recordedLength}
+        outline={CIRCUITS.get(race.Circuit.circuitId)?.outline ?? null}
+        explain={explain}
+        compare={compareTarget}
       />
 
       <SessionTable rows={rows} selected={current.driver.driver_number} onSelect={chooseDriver} />
@@ -205,22 +331,55 @@ export function TelemetryPanel({ season, round, race }: { season: number; round:
   );
 }
 
+async function loadTrace(sessionKey: number, row: DriverRow, lap: TimedLap, recordedLength: number | null) {
+  const end = new Date(Date.parse(lap.date_start) + lap.lap_duration * 1000).toISOString();
+  const samples = await getCarData(sessionKey, row.driver.driver_number, lap.date_start, end);
+  return buildTelemetryTrace(samples, lap, recordedLength);
+}
+
 function LapTrace({
   sessionKey,
   row,
   lap,
   recordedLength,
+  outline,
+  explain,
+  compare,
 }: {
   sessionKey: number;
   row: DriverRow;
   lap: TimedLap;
   recordedLength: number | null;
+  outline: CircuitOutline | null;
+  explain: boolean;
+  compare: CompareTarget | null;
 }) {
-  const car = useAsync(async () => {
-    const end = new Date(Date.parse(lap.date_start) + lap.lap_duration * 1000).toISOString();
-    const samples = await getCarData(sessionKey, row.driver.driver_number, lap.date_start, end);
-    return buildTelemetryTrace(samples, lap, recordedLength);
-  }, [sessionKey, row.driver.driver_number, lap.lap_number]);
+  const car = useAsync(
+    () => loadTrace(sessionKey, row, lap, recordedLength),
+    [sessionKey, row.driver.driver_number, lap.lap_number],
+  );
+  // Nothing is fetched for the comparison until one is chosen.
+  const compareCar = useAsync(
+    () => (compare ? loadTrace(sessionKey, compare.row, compare.lap, recordedLength) : Promise.resolve(null)),
+    [sessionKey, compare?.row.driver.driver_number, compare?.lap.lap_number],
+  );
+  const [cursor, setCursor] = useState(-1);
+  const trace = car.data ?? null;
+  const compareTrace = compare ? compareCar.data ?? null : null;
+  const insights = useMemo(() => (trace && explain ? buildLapInsights(trace) : null), [trace, explain]);
+  const compareInsights = useMemo(
+    () => (compareTrace && explain ? buildLapInsights(compareTrace) : null),
+    [compareTrace, explain],
+  );
+  const delta = useMemo(() => (trace && compareTrace ? buildLapDelta(trace, compareTrace) : null), [trace, compareTrace]);
+  const comparisons = useMemo(
+    () =>
+      insights && compareInsights && trace && compareTrace
+        ? matchZones(insights.zones, compareInsights.zones, trace, compareTrace)
+        : null,
+    [insights, compareInsights, trace, compareTrace],
+  );
+  const compareLabel = compare ? `${compare.row.driver.name_acronym} L${compare.lap.lap_number}` : "";
 
   const title = `${row.driver.name_acronym} · lap ${lap.lap_number} · ${formatLapTime(lap.lap_duration * 1000)}`;
 
@@ -232,7 +391,6 @@ function LapTrace({
     );
   }
   if (car.error) return <ErrorBlock message={car.error} />;
-  const trace = car.data;
   if (!trace) {
     return (
       <Panel title={title}>
@@ -260,7 +418,49 @@ function LapTrace({
           </div>
         ))}
       </dl>
-      <TelemetryChart trace={trace} label={title} color={row.color} />
+      {compare && (
+        <p className="mb-2 text-[11px] text-muted-foreground" aria-live="polite">
+          {compareCar.loading
+            ? `Loading ${compareLabel} for comparison…`
+            : compareCar.error
+              ? `Comparison unavailable: ${compareCar.error}`
+              : !compareTrace
+                ? `OpenF1 has no car data for ${compareLabel}, so there is nothing to compare.`
+                : `Compared with ${compareLabel} (${formatLapTime(compare.lap.lap_duration * 1000)}): dashed line on the speed strip; the bottom strip shows the running time gap.`}
+        </p>
+      )}
+      <TelemetryChart
+        trace={trace}
+        label={title}
+        color={row.color}
+        annotations={insights ? { zones: insights.zones, straights: insights.straights } : undefined}
+        cursorIndex={cursor}
+        onCursorChange={setCursor}
+        compare={compareTrace ? { trace: compareTrace, color: COMPARE_COLOR, label: compareLabel, delta } : undefined}
+      />
+      {insights && (
+        <div className="mt-4 grid gap-4 border-t border-border pt-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <section aria-label="What each line means" className="flex flex-col gap-3">
+            <h3 className="label-caps text-[11px] text-muted-foreground">What each line means</h3>
+            <ChannelKey trace={trace} insights={insights} />
+            <h3 className="label-caps text-[11px] text-muted-foreground">How to read the chart</h3>
+            <ReadingNote />
+            {outline && insights.zones.length > 0 && (
+              <LapEventMap outline={outline} trace={trace} zones={insights.zones} activeIndex={cursor} />
+            )}
+          </section>
+          <section aria-label="The story of this lap" className="flex flex-col gap-2">
+            <h3 className="label-caps text-[11px] text-muted-foreground">The story of this lap</h3>
+            <LapStory
+              insights={insights}
+              comparisons={comparisons}
+              compareLabel={compareTrace ? compareLabel : undefined}
+              onFocus={setCursor}
+              activeIndex={cursor}
+            />
+          </section>
+        </div>
+      )}
       <p className="mt-2 text-[11px] text-muted-foreground">
         Distance is integrated from the car&apos;s speed trace, not GPS
         {recordedLength

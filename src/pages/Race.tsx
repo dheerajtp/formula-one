@@ -15,13 +15,28 @@ import {
 import { CIRCUITS, TYRES, WEATHER, compoundAppearance } from "@/lib/staticData";
 import { useAsync } from "@/lib/useAsync";
 import { QualifyingBoard } from "./Qualifying";
+import { RaceFastestLapsPanel } from "./RaceFastestLaps";
+import { RacePitStopsPanel } from "./RacePitStops";
 import { StrategyPanel } from "./Strategy";
 import { TelemetryPanel } from "./Telemetry";
 
-const TABS = ["Result", "Qualifying", "Lap chart", "Telemetry", "Strategy"] as const;
+const TABS = ["Result", "Qualifying", "Lap chart", "Fastest laps", "Pit stops", "Telemetry", "Strategy"] as const;
 export type Tab = (typeof TABS)[number];
 
-export function RacePage({ season, round, initialTab }: { season: number; round: number; initialTab?: Tab }) {
+export function RacePage({
+  season,
+  round,
+  initialTab,
+  initialDriverCode,
+  initialLap,
+}: {
+  season: number;
+  round: number;
+  initialTab?: Tab;
+  /** Telemetry preselection from `#/race/{s}/{r}/telemetry/{code}/{lap}`. */
+  initialDriverCode?: string;
+  initialLap?: number;
+}) {
   const [tab, setTab] = useState<Tab>(initialTab ?? "Result");
   const timeZone = zoneOf(useZoneMode());
   const calendar = useAsync(() => getCalendar(season), [season]);
@@ -136,7 +151,17 @@ export function RacePage({ season, round, initialTab }: { season: number; round:
       {tab === "Result" && <ResultTable season={season} round={round} />}
       {tab === "Qualifying" && <QualifyingBoard season={season} round={round} race={race} />}
       {tab === "Lap chart" && <LapSection season={season} round={round} />}
-      {tab === "Telemetry" && <TelemetryPanel season={season} round={round} race={race} />}
+      {tab === "Fastest laps" && <RaceFastestLapsPanel season={season} round={round} race={race} />}
+      {tab === "Pit stops" && <RacePitStopsPanel season={season} round={round} race={race} />}
+      {tab === "Telemetry" && (
+        <TelemetryPanel
+          season={season}
+          round={round}
+          race={race}
+          initialDriverCode={initialDriverCode}
+          initialLap={initialLap}
+        />
+      )}
       {tab === "Strategy" && <StrategyPanel season={season} round={round} race={race} />}
     </div>
   );

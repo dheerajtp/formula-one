@@ -16,7 +16,12 @@ import { getCalendar } from "@/lib/jolpica";
 import { browserZone, setZoneMode, useZoneMode, zoneShort, type ZoneMode } from "@/lib/timezone";
 
 /** Optional `#/race/{season}/{round}/{tab}` segments that open a Race tab directly. */
-const RACE_TAB_SEGMENTS: Record<string, Tab | undefined> = { telemetry: "Telemetry", strategy: "Strategy" };
+const RACE_TAB_SEGMENTS: Record<string, Tab | undefined> = {
+  telemetry: "Telemetry",
+  strategy: "Strategy",
+  "fastest-laps": "Fastest laps",
+  "pit-stops": "Pit stops",
+};
 
 const NAV = [
   { href: "#/", label: "Season" },
@@ -90,7 +95,9 @@ export default function App() {
             key={window.location.hash}
             season={Number(route.params.season)}
             round={Number(route.params.round)}
-            initialTab={RACE_TAB_SEGMENTS[route.params.tab ?? ""]}
+            initialTab={route.params.driver ? "Telemetry" : RACE_TAB_SEGMENTS[route.params.tab ?? ""]}
+            initialDriverCode={route.params.driver}
+            initialLap={route.params.lap ? Number(route.params.lap) : undefined}
           />
         )}
         {route.name === "replay" && (

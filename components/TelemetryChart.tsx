@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { TelemetryPoint, TelemetryTrace } from "@/lib/telemetry";
+import type { BrakingZone, DeltaPoint, Straight } from "@/lib/telemetryInsights";
 
 /** Presentation layout only: viewBox size, strip heights and gutters. */
 const W = 900;
@@ -10,8 +11,8 @@ const SPEED_H = 150;
 const PEDAL_H = 70;
 const GEAR_H = 80;
 const AXIS_H = 22;
+const DELTA_H = 70;
 const TOP = 6;
-const H = TOP + SPEED_H + STRIP_GAP + PEDAL_H + STRIP_GAP + GEAR_H + AXIS_H;
 
 const GRID = "#ffffff14";
 const MUTED = "#8b949f";
@@ -24,7 +25,7 @@ const PEDAL_MAX = 100;
 const SPEED_TOP = TOP;
 const PEDAL_TOP = SPEED_TOP + SPEED_H + STRIP_GAP;
 const GEAR_TOP = PEDAL_TOP + PEDAL_H + STRIP_GAP;
-const AXIS_TOP = GEAR_TOP + GEAR_H;
+const DELTA_TOP = GEAR_TOP + GEAR_H + STRIP_GAP;
 
 function finiteRange(values: number[]): [number, number] | null {
   const finite = values.filter(Number.isFinite);
@@ -68,14 +69,50 @@ function path(points: TelemetryPoint[], x: (p: TelemetryPoint) => number, y: (p:
   return d;
 }
 
-export function TelemetryChart({ trace, label, color }: { trace: TelemetryTrace; label: string; color: string }) {
+export interface ChartCompare {
+  trace: TelemetryTrace;
+  color: string;
+  label: string;
+  delta: DeltaPoint[] | null;
+}
+
+export function TelemetryChart({
+  trace,
+  label,
+  color,
+  annotations,
+  cursorIndex,
+  onCursorChange,
+  compare,
+}: {
+  trace: TelemetryTrace;
+  label: string;
+  color: string;
+  /** Numbered braking-zone markers and shaded full-throttle stretches (guide mode). */
+  annotations?: { zones: BrakingZone[]; straights: Straight[] };
+  /** Controlled cursor; when omitted the chart keeps its own. */
+  cursorIndex?: number;
+  onCursorChange?: (index: number) => void;
+  /** A second lap drawn on the speed strip, plus a time-delta strip. */
+  compare?: ChartCompare;
+}) {
   const points = trace.points;
-  const [cursor, setCursor] = useState<number>(-1);
+  const [ownCursor, setOwnCursor] = useState<number>(-1);
+  const cursor = cursorIndex ?? ownCursor;
+  const setCursor = (next: number | ((c: number) => number)) => {
+    const value = typeof next === "function" ? next(cursor) : next;
+    if (onCursorChange) onCursorChange(value);
+    else setOwnCursor(value);
+  };
   const svgRef = useRef<SVGSVGElement>(null);
+  const delta = compare?.delta && compare.delta.length > 1 ? compare.delta : null;
+  const AXIS_TOP = delta ? DELTA_TOP + DELTA_H : GEAR_TOP + GEAR_H;
+  const H = AXIS_TOP + AXIS_H;
 
   const scales = useMemo(() => {
     const maxDistance = trace.distanceM > 0 ? trace.distanceM : 1;
-    const speed = finiteRange(points.map((p) => p.speedKph)) ?? [0, 1];
+    const speed =
+      finiteRange([...points, ...(compare?.trace.points ?? [])].map((p) => p.speedKph)) ?? [0, 1];
     const gear = finiteRange(points.map((p) => p.gear)) ?? [0, 1];
     const rpm = finiteRange(points.map((p) => p.rpm)) ?? [0, 1];
     const speedMin = Math.min(0, speed[0]);
@@ -99,7 +136,14 @@ export function TelemetryChart({ trace, label, color }: { trace: TelemetryTrace;
       yGear: (v: number) => GEAR_TOP + GEAR_H - ((v - gearMin) / (gearMax - gearMin)) * GEAR_H,
       yRpm: (v: number) => GEAR_TOP + GEAR_H - ((v - rpmMin) / (rpmMax - rpmMin)) * GEAR_H,
     };
-  }, [points, trace.distanceM]);
+  }, [points, trace.distanceM, compare?.trace]);
+
+  const deltaScale = useMemo(() => {
+    if (!delta) return null;
+    const range = finiteRange(delta.map((d) => d.deltaS)) ?? [0, 0];
+    const extent = Math.max(Math.abs(range[0]), Math.abs(range[1])) || 1;
+    return { extent, y: (v: number) => DELTA_TOP + DELTA_H / 2 - (v / extent) * (DELTA_H / 2) };
+  }, [delta]);
 
   const distanceTicks = useMemo(() => {
     const step = niceStep(scales.maxDistance, 6);
@@ -159,6 +203,8 @@ export function TelemetryChart({ trace, label, color }: { trace: TelemetryTrace;
         <LegendSwatch color={BRAKE} label="Brake %" />
         <LegendSwatch color={color} label="Gear" dashed={false} thin />
         <LegendSwatch color={RPM} label="RPM" dashed />
+        {compare && <LegendSwatch color={compare.color} label={`${compare.label} speed`} dashed />}
+        {delta && compare && <LegendSwatch color={compare.color} label={`Δ time (+ = ${compare.label} behind)`} />}
       </div>
       <svg
         ref={svgRef}
@@ -180,7 +226,47 @@ export function TelemetryChart({ trace, label, color }: { trace: TelemetryTrace;
             </text>
           </g>
         ))}
+        {annotations?.straights.map((s) => (
+          <rect
+            key={s.id}
+            x={scales.x(s.startDistanceM)}
+            y={SPEED_TOP}
+            width={Math.max(0, scales.x(s.endDistanceM) - scales.x(s.startDistanceM))}
+            height={SPEED_H}
+            fill="#3ac55a14"
+          />
+        ))}
+        {compare && (
+          <path
+            d={path(
+              compare.trace.points,
+              (p) => scales.x((compare.trace.distanceM > 0 ? p.distanceM / compare.trace.distanceM : 0) * scales.maxDistance),
+              (p) => scales.ySpeed(p.speedKph),
+            )}
+            fill="none"
+            stroke={compare.color}
+            strokeWidth={1.2}
+            strokeOpacity={0.75}
+            strokeDasharray="4 2"
+          />
+        )}
         <path d={path(points, (p) => scales.x(p.distanceM), (p) => scales.ySpeed(p.speedKph))} fill="none" stroke={color} strokeWidth={1.6} />
+        {annotations?.zones.map((z) => (
+          <g key={z.id} aria-label={`${z.id}: braking from ${Math.round(z.entrySpeedKph)} km/h`}>
+            <line
+              x1={scales.x(z.startDistanceM)}
+              x2={scales.x(z.startDistanceM)}
+              y1={SPEED_TOP + 12}
+              y2={SPEED_TOP + SPEED_H}
+              stroke={BRAKE}
+              strokeOpacity={0.5}
+              strokeDasharray="2 2"
+            />
+            <text x={scales.x(z.startDistanceM)} y={SPEED_TOP + 9} fontSize={9} textAnchor="middle" fill={BRAKE}>
+              {z.id}
+            </text>
+          </g>
+        ))}
 
         {/* Pedal strip */}
         {[0, PEDAL_MAX / 2, PEDAL_MAX].map((v) => (
@@ -205,6 +291,29 @@ export function TelemetryChart({ trace, label, color }: { trace: TelemetryTrace;
         </text>
         <path d={path(points, (p) => scales.x(p.distanceM), (p) => scales.yRpm(p.rpm))} fill="none" stroke={RPM} strokeWidth={1} strokeDasharray="3 2" />
         <path d={path(points, (p) => scales.x(p.distanceM), (p) => scales.yGear(p.gear), true)} fill="none" stroke={color} strokeWidth={1.2} />
+
+        {delta && deltaScale && compare && (
+          <g>
+            <line x1={PAD_L} x2={W - PAD_R} y1={deltaScale.y(0)} y2={deltaScale.y(0)} stroke={GRID} />
+            <text x={PAD_L - 6} y={DELTA_TOP + 9} fontSize={9} textAnchor="end" fill={MUTED}>
+              +{deltaScale.extent.toFixed(1)}
+            </text>
+            <text x={PAD_L - 6} y={DELTA_TOP + DELTA_H} fontSize={9} textAnchor="end" fill={MUTED}>
+              −{deltaScale.extent.toFixed(1)}
+            </text>
+            <text x={W - PAD_R + 6} y={deltaScale.y(0) + 3} fontSize={9} fill={MUTED}>
+              Δ s
+            </text>
+            <path
+              d={delta
+                .map((d, i) => `${i ? "L" : "M"}${scales.x(d.distanceM).toFixed(1)},${deltaScale.y(d.deltaS).toFixed(1)}`)
+                .join("")}
+              fill="none"
+              stroke={compare.color}
+              strokeWidth={1.4}
+            />
+          </g>
+        )}
 
         {/* Distance axis */}
         {distanceTicks.map((d) => (

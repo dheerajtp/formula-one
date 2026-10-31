@@ -22,9 +22,9 @@ Master plan: [`../../PLAN.md`](../../PLAN.md) · Builds on: [01 — Telemetry an
 | W9 | **Accessibility and layout.** Same conventions as plan 01: visible definitions (not tooltip-only), stint bars with `aria-label`, `tnum` numbers, the panel readable at 360 px inside the existing two-column layout (it stacks on narrow screens). |
 
 ## Status
-- [ ] 01 — Shared strategy loader and baseline cache
-- [ ] 02 — Weekend pit strategy panel
-- [ ] 03 — Weekend integration and Race tab deep link
+- [x] 01 — Shared strategy loader and baseline cache
+- [x] 02 — Weekend pit strategy panel
+- [x] 03 — Weekend integration and Race tab deep link
 - [ ] 04 — Acceptance QA
 
 ## Dependencies and parallel tracks

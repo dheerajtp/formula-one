@@ -191,7 +191,7 @@ function LapRecordsTab({ season }: { season: number }) {
                 <tr key={r.round} className={`${ROW} ${r.round === selected.round ? "bg-secondary/60" : ""}`}>
                   <td className="tnum px-3 py-1.5 text-muted-foreground">{r.round}</td>
                   <td className="px-3 py-1.5">
-                    <a href={`#/race/${r.season}/${r.round}`} className="hover:text-primary">
+                    <a href={`#/race/${r.season}/${r.round}/fastest-laps`} className="hover:text-primary">
                       {r.raceName}
                     </a>
                   </td>
@@ -459,7 +459,7 @@ function PitLaneTransit({ season }: { season: number }) {
       <TransitTable season={season} round={meta.round} stops={stops} />
       <p className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
         Official Jolpica pit rows for{" "}
-        <a href={`#/race/${season}/${meta.round}`} className="text-primary hover:underline">
+        <a href={`#/race/${season}/${meta.round}/pit-stops`} className="text-primary hover:underline">
           {meta.raceName}
         </a>
         . Pit-lane transit runs from pit entry to pit exit, so it includes the drive through the lane; pit lanes differ
