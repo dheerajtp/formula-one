@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRoute } from "@/lib/router";
 import { Home } from "./pages/Home";
 import { CalendarPage } from "./pages/Calendar";
@@ -44,15 +44,36 @@ export default function App() {
     localStorage.setItem("f1-season", String(season));
   }, [season]);
 
+  // Mobile menu: closes on navigation and Escape, handing focus back to its button.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const closeMenu = (refocus: boolean) => {
+    setMenuOpen(false);
+    if (refocus) menuButton.current?.focus();
+  };
+  useEffect(() => {
+    const onHash = () => setMenuOpen(false);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-x-6 gap-y-2 px-4 py-2.5 md:flex-wrap">
           <a href="#/" className="flex items-center gap-2.5">
             <span className="h-5 w-1.5 bg-primary" aria-hidden />
             <span className="text-lg font-bold uppercase tracking-[0.18em]">Pit Wall</span>
           </a>
-          <nav aria-label="Sections" className="flex items-center gap-1">
+          <nav aria-label="Sections" className="hidden items-center gap-1 md:flex">
             {NAV.map((item) => {
               const active = isActive(item.href, route);
               return (
@@ -69,7 +90,7 @@ export default function App() {
               );
             })}
           </nav>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto hidden items-center gap-3 md:flex">
             <ZoneToggle />
             <div className="flex items-center gap-2">
               <label htmlFor="season" className="label-caps text-[10px] text-muted-foreground">
@@ -78,7 +99,54 @@ export default function App() {
               <SeasonSelect value={season} onChange={setSeason} />
             </div>
           </div>
+          <button
+            ref={menuButton}
+            type="button"
+            aria-expanded={menuOpen}
+            aria-controls="site-menu"
+            onClick={() => setMenuOpen((open) => !open)}
+            className="label-caps ml-auto flex items-center gap-2 rounded border border-border px-3 py-1.5 text-xs md:hidden"
+          >
+            <span className="flex w-3.5 flex-col gap-[3px]" aria-hidden>
+              <span className={`h-px bg-current transition-transform ${menuOpen ? "translate-y-[4px] rotate-45" : ""}`} />
+              <span className={`h-px bg-current ${menuOpen ? "opacity-0" : ""}`} />
+              <span className={`h-px bg-current transition-transform ${menuOpen ? "-translate-y-[4px] -rotate-45" : ""}`} />
+            </span>
+            {menuOpen ? "Close" : "Menu"}
+            <span className="text-muted-foreground">· {season}</span>
+          </button>
         </div>
+        {menuOpen && (
+          <div id="site-menu" className="border-t border-border px-4 pb-4 pt-3 md:hidden">
+            <nav aria-label="Sections" className="grid grid-cols-2 gap-1">
+              {NAV.map((item) => {
+                const active = isActive(item.href, route);
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => closeMenu(false)}
+                    className={`label-caps rounded px-3 py-2.5 text-xs ${
+                      active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                    }`}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </nav>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <ZoneToggle />
+              <div className="flex items-center gap-2">
+                <label htmlFor="season-mobile" className="label-caps text-[10px] text-muted-foreground">
+                  Season
+                </label>
+                <SeasonSelect id="season-mobile" value={season} onChange={setSeason} />
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-5">
@@ -207,7 +275,7 @@ function isActive(href: string, route: ReturnType<typeof useRoute>) {
   return href === `#/${section}`;
 }
 
-function SeasonSelect({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+function SeasonSelect({ id = "season", value, onChange }: { id?: string; value: number; onChange: (n: number) => void }) {
   const [options, setOptions] = useState<number[]>(() => {
     const now = currentSeason();
     return Array.from({ length: 8 }, (_, i) => now - i);
@@ -229,7 +297,7 @@ function SeasonSelect({ value, onChange }: { value: number; onChange: (n: number
 
   return (
     <select
-      id="season"
+      id={id}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
       className="tnum rounded border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

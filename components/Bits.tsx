@@ -87,6 +87,27 @@ export function ErrorBlock({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
+const OPENF1_PAUSED_PREFIX = "OpenF1 paused:";
+
+/** Neutral note for OpenF1's live-session pause: an expected, temporary state, not a failure. */
+export function PausedNote({ message }: { message: string }) {
+  return (
+    <div className="border border-[#ffb020]/50 bg-[#ffb020]/10 p-3 text-sm" role="status">
+      <p className="font-semibold">OpenF1 is paused during a live F1 session</p>
+      <p className="mt-1 text-muted-foreground">{message.replace(OPENF1_PAUSED_PREFIX, "").trim()}</p>
+    </div>
+  );
+}
+
+/** Shows the paused note for OpenF1's live-session pause and the error block for anything else. */
+export function DataError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return message.startsWith(OPENF1_PAUSED_PREFIX) ? (
+    <PausedNote message={message} />
+  ) : (
+    <ErrorBlock message={message} onRetry={onRetry} />
+  );
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="py-6 text-sm text-muted-foreground">{children}</div>;
 }

@@ -47,7 +47,7 @@ export function RacePitStopsPanel({ season, round, race }: { season: number; rou
       : data.openf1 === "pending"
         ? "OpenF1 publishes stationary crew times after the race ends."
         : data.openf1 === "error"
-          ? data.openf1Error ?? "OpenF1 could not be reached."
+          ? (data.openf1Error ?? "OpenF1 could not be reached.").replace(/^OpenF1 paused:\s*/, "OpenF1 is paused during a live F1 session: ")
           : null;
 
   return (

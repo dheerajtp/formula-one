@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Empty, ErrorBlock, Loading, Panel } from "@/components/Bits";
+import { DataError, Empty, Loading, Panel } from "@/components/Bits";
 import { TelemetryChart } from "@/components/TelemetryChart";
 import { ChannelKey, LapEventMap, LapStory, ReadingNote } from "@/components/TelemetryGuide";
 import { teamColor } from "@/lib/colors";
@@ -166,7 +166,7 @@ export function TelemetryPanel({
       </Panel>
     );
   }
-  if (session.error) return <ErrorBlock message={session.error} />;
+  if (session.error) return <DataError message={session.error} />;
   if (!session.data?.resolved) {
     return (
       <Panel title="Telemetry">
@@ -390,7 +390,7 @@ function LapTrace({
       </Panel>
     );
   }
-  if (car.error) return <ErrorBlock message={car.error} />;
+  if (car.error) return <DataError message={car.error} />;
   if (!trace) {
     return (
       <Panel title={title}>

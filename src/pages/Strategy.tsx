@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Empty, ErrorBlock, Loading, Panel } from "@/components/Bits";
+import { DataError, Empty, Loading, Panel } from "@/components/Bits";
 import type { Race } from "@/lib/jolpica";
 import { COMPOUND_STYLE, TYRES, compoundAppearance } from "@/lib/staticData";
 import {
@@ -42,7 +42,7 @@ export function StrategyPanel({ season, round, race }: { season: number; round: 
       </Panel>
     );
   }
-  if (state.error) return <ErrorBlock message={state.error} />;
+  if (state.error) return <DataError message={state.error} />;
   const data = state.data;
   if (!data || data.mode === "missing") {
     return (

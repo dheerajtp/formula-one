@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Empty, ErrorBlock, Loading, Panel } from "@/components/Bits";
+import { DataError, Empty, Loading, Panel } from "@/components/Bits";
 import type { Race } from "@/lib/jolpica";
 import type { SessionPhase } from "@/lib/live";
 import { COMPOUND_STYLE } from "@/lib/staticData";
@@ -59,7 +59,7 @@ export function WeekendStrategyPanel({
   if (state.error) {
     return (
       <Panel title={TITLE}>
-        <ErrorBlock message={state.error} />
+        <DataError message={state.error} />
       </Panel>
     );
   }

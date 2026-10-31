@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Empty, ErrorBlock, Loading, Panel } from "@/components/Bits";
+import { DataError, Empty, ErrorBlock, Loading, Panel } from "@/components/Bits";
 import { teamColor } from "@/lib/colors";
 import { formatDate, formatGapSeconds, formatLapTime } from "@/lib/format";
 import { getRaceResults, getSeasonFastestLaps, getSeasonPitStops, type SeasonPitStop } from "@/lib/jolpica";
@@ -339,7 +339,7 @@ function CrewStops({ season }: { season: number }) {
   if (error) {
     return (
       <Panel title={title}>
-        <ErrorBlock message={error} />
+        <DataError message={error} />
       </Panel>
     );
   }

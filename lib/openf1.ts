@@ -10,6 +10,7 @@
  * that one function without touching callers.
  */
 import type { Race } from "./jolpica";
+import { storeGet, storePut } from "./openf1Store";
 
 const BASE = "https://api.openf1.org/v1";
 const CACHE_KEY = "f1-openf1-cache:v1";
@@ -235,16 +236,28 @@ function requestFailure(status: number, path: string): Error {
   return Object.assign(error, { status });
 }
 
+/** Every paused-state message starts with this, so views can tell it apart from real failures. */
+export const OPENF1_PAUSED_PREFIX = "OpenF1 paused:";
+
+export function isOpenF1Paused(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return message.startsWith(OPENF1_PAUSED_PREFIX);
+}
+
 /**
- * A fetch that fails outright. While an F1 session is live, OpenF1 answers every
+ * A fetch that fails outright. While any F1 session is live, OpenF1 answers every
  * unauthenticated request (past sessions included) with 401 and no CORS header,
- * so the browser only sees a network error; say that rather than a bare
- * "Failed to fetch".
+ * so the browser sees only a network error. When the device is online that is
+ * almost always the live-session pause, so it is reported as a named state rather
+ * than a generic failure; an offline device gets its own message.
  */
 function unreachable(path: string): Error {
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
   const error = new Error(
-    `OpenF1 could not be reached for ${path}. While an F1 session is live, OpenF1 blocks all free access ` +
-      "(past races included) until the session ends, so try again afterwards.",
+    offline
+      ? `OpenF1 could not be reached for ${path}: this device is offline.`
+      : `${OPENF1_PAUSED_PREFIX} OpenF1 pauses free access while an F1 session is live, past races included. ` +
+          "Data already saved for this race is shown; the rest returns when the session ends.",
   );
   return Object.assign(error, { status: 0 });
 }
@@ -292,6 +305,28 @@ function isCacheable(path: string, body: unknown): boolean {
  * `persist` also mirrors them into `sessionStorage` for the two lookups whose
  * answers do not change during a meeting (season meetings, session metadata).
  */
+/** End time of every session this visit has seen, so settled responses can be stored for offline use. */
+const sessionEnds = new Map<number, number>();
+
+export function rememberSessionEnds(rows: { session_key?: number; date_end?: string; date_start?: string }[]) {
+  for (const row of rows) {
+    const end = Date.parse(row.date_end || row.date_start || "");
+    if (typeof row.session_key === "number" && Number.isFinite(end)) sessionEnds.set(row.session_key, end);
+  }
+}
+
+/** A session-scoped request whose session has ended: its answer can never change. */
+function isSettled(params: QueryParams): boolean {
+  const key = Number(params.session_key);
+  const end = sessionEnds.get(key);
+  return end !== undefined && end <= Date.now();
+}
+
+/** Lookups that can still change but are worth keeping as a fallback while OpenF1 is paused. */
+function isFallbackLookup(path: string): boolean {
+  return path === "/meetings" || path === "/sessions";
+}
+
 export async function requestOpenF1<T>(
   path: string,
   params: QueryParams = {},
@@ -303,7 +338,17 @@ export async function requestOpenF1<T>(
     const persisted = readPersisted(CACHE_KEY + url);
     if (persisted !== null) {
       cache.set(url, persisted);
+      if (path === "/sessions" && Array.isArray(persisted)) rememberSessionEnds(persisted);
       return persisted as T;
+    }
+  }
+
+  const settled = isSettled(params);
+  if (settled) {
+    const stored = await storeGet<T>(url);
+    if (stored !== null) {
+      cache.set(url, stored);
+      return stored;
     }
   }
 
@@ -313,13 +358,22 @@ export async function requestOpenF1<T>(
     try {
       res = await enqueue(() => fetch(url, { headers: { accept: "application/json" } }));
     } catch {
+      // Paused or offline: anything saved earlier for this exact request still serves.
+      const stored = await storeGet<T>(url);
+      if (stored !== null) {
+        cache.set(url, stored);
+        if (path === "/sessions" && Array.isArray(stored)) rememberSessionEnds(stored);
+        return stored;
+      }
       throw unreachable(path);
     }
     if (res.ok) {
       const json = (await res.json()) as T;
+      if (path === "/sessions" && Array.isArray(json)) rememberSessionEnds(json);
       if (isCacheable(path, json)) {
         cache.set(url, json);
         if (opts.persist) writePersisted(CACHE_KEY + url, json);
+        if (settled || isFallbackLookup(path)) void storePut(url, json);
       }
       return json;
     }
@@ -337,6 +391,78 @@ export async function requestOpenF1<T>(
     if (status < 500 || attempt >= MAX_ATTEMPTS) throw requestFailure(status, path);
     await sleep(BACKOFF_BASE_MS * 2 ** (attempt - 1));
   }
+}
+
+/* ----------------------------------------------------- bundled snapshot */
+
+/**
+ * Completed race sessions saved into the site by `npm run build-openf1`
+ * (`public/openf1`). They are OpenF1's own rows, read first for settled sessions
+ * so race pages keep working while OpenF1 pauses free access during live sessions.
+ */
+interface SnapshotIndexRow {
+  season: number;
+  round: number;
+  session: OpenF1Session;
+}
+
+interface SessionSnapshot {
+  season: number;
+  round: number;
+  session: OpenF1Session;
+  drivers: OpenF1Driver[];
+  lapFields: string[];
+  laps: unknown[][];
+  stints: OpenF1Stint[];
+  pit: OpenF1Pit[];
+  raceControl: OpenF1RaceControl[];
+}
+
+interface ExpandedSnapshot extends Omit<SessionSnapshot, "laps"> {
+  laps: OpenF1Lap[];
+}
+
+const SNAPSHOT_BASE = `${import.meta.env.BASE_URL ?? "/"}openf1`;
+let snapshotIndex: Promise<SnapshotIndexRow[]> | null = null;
+const snapshots = new Map<number, Promise<ExpandedSnapshot | null>>();
+
+/** The saved-race index; empty when the site ships without snapshots. */
+export function loadSnapshotIndex(): Promise<SnapshotIndexRow[]> {
+  snapshotIndex ??= fetch(`${SNAPSHOT_BASE}/index.json`)
+    .then((res) => (res.ok ? res.json() : { sessions: [] }))
+    .then((body: { sessions?: SnapshotIndexRow[] }) => {
+      const rows = body.sessions ?? [];
+      rememberSessionEnds(rows.map((row) => row.session));
+      return rows;
+    })
+    .catch(() => []);
+  return snapshotIndex;
+}
+
+async function snapshotForSession(sessionKey: number): Promise<ExpandedSnapshot | null> {
+  if (!snapshots.has(sessionKey)) {
+    snapshots.set(
+      sessionKey,
+      loadSnapshotIndex().then(async (rows) => {
+        const row = rows.find((r) => r.session.session_key === sessionKey);
+        if (!row) return null;
+        try {
+          const res = await fetch(`${SNAPSHOT_BASE}/${row.season}/${row.round}.json`);
+          if (!res.ok) return null;
+          const raw = (await res.json()) as SessionSnapshot;
+          const laps = raw.laps.map((tuple) => {
+            const lap: Record<string, unknown> = {};
+            raw.lapFields.forEach((field, i) => (lap[field] = tuple[i]));
+            return lap as unknown as OpenF1Lap;
+          });
+          return { ...raw, laps };
+        } catch {
+          return null;
+        }
+      }),
+    );
+  }
+  return snapshots.get(sessionKey)!;
 }
 
 export async function getSeasonMeetings(season: number): Promise<OpenF1Meeting[]> {
@@ -416,8 +542,28 @@ export async function getRaceSession(meetingKey: number): Promise<OpenF1Session 
 
 export async function resolveRaceSession(
   season: number,
-  race: Pick<Race, "raceName" | "date">,
+  race: Pick<Race, "raceName" | "date"> & { round?: string },
 ): Promise<{ meeting: OpenF1Meeting; session: OpenF1Session } | null> {
+  const saved = (await loadSnapshotIndex()).find(
+    (row) => row.season === season && race.round !== undefined && row.round === Number(race.round),
+  );
+  if (saved) {
+    const s = saved.session;
+    // The snapshot carries the session row; the meeting fields callers use are on it too.
+    const meeting: OpenF1Meeting = {
+      meeting_key: s.meeting_key,
+      meeting_name: race.raceName,
+      meeting_official_name: race.raceName,
+      location: s.location,
+      country_name: s.country_name,
+      circuit_key: s.circuit_key,
+      circuit_short_name: s.circuit_short_name,
+      date_start: s.date_start,
+      date_end: s.date_end,
+      year: s.year,
+    };
+    return { meeting, session: s };
+  }
   const meetings = await getSeasonMeetings(season);
   const meeting = findRaceMeeting(meetings, race);
   if (!meeting) return null;
@@ -435,10 +581,19 @@ export async function getPriorRaceSessions(
   excludeSessionKey?: number,
 ): Promise<OpenF1Session[]> {
   const before = Date.parse(beforeIso);
-  const fetched = await allowMissing(
-    requestOpenF1<OpenF1Session[]>("/sessions", { circuit_key: circuitKey, session_name: "Race" }),
-  );
-  const sessions = fetched ?? [];
+  const saved = (await loadSnapshotIndex()).map((row) => row.session).filter((s) => s.circuit_key === circuitKey);
+  let fetched: OpenF1Session[] | null = null;
+  try {
+    fetched = await allowMissing(
+      requestOpenF1<OpenF1Session[]>("/sessions", { circuit_key: circuitKey, session_name: "Race" }),
+    );
+  } catch (error) {
+    // Paused: the saved races at this circuit are still a complete history up to the snapshot.
+    if (!saved.length) throw error;
+  }
+  const byKey = new Map<number, OpenF1Session>();
+  for (const session of [...saved, ...(fetched ?? [])]) byKey.set(session.session_key, session);
+  const sessions = [...byKey.values()];
   return sessions
     .filter(
       (session) =>
@@ -456,9 +611,16 @@ export async function getPriorRaceSessions(
  * session name decides, exactly as `getRaceSession` does for one meeting.
  */
 export async function getSeasonRaceSessions(season: number): Promise<OpenF1Session[]> {
-  const sessions = await allowMissing(
-    requestOpenF1<OpenF1Session[]>("/sessions", { year: season }, { persist: true }),
-  );
+  let sessions: OpenF1Session[] | null;
+  try {
+    sessions = await allowMissing(
+      requestOpenF1<OpenF1Session[]>("/sessions", { year: season }, { persist: true }),
+    );
+  } catch (error) {
+    const saved = (await loadSnapshotIndex()).filter((row) => row.season === season).map((row) => row.session);
+    if (!saved.length) throw error;
+    sessions = saved;
+  }
   return (sessions ?? [])
     .filter((session) => !session.is_cancelled && session.session_name === "Race")
     .sort((a, b) => Date.parse(a.date_start) - Date.parse(b.date_start));
@@ -469,6 +631,8 @@ export async function getSessionDrivers(
   sessionKey: number,
   opts: { persist?: boolean } = {},
 ): Promise<OpenF1Driver[]> {
+  const saved = await snapshotForSession(sessionKey);
+  if (saved) return saved.drivers;
   const drivers = await allowMissing(
     requestOpenF1<OpenF1Driver[]>("/drivers", { session_key: sessionKey }, opts),
   );
@@ -476,6 +640,8 @@ export async function getSessionDrivers(
 }
 
 export async function getSessionLaps(sessionKey: number, driverNumber?: number): Promise<OpenF1Lap[]> {
+  const saved = await snapshotForSession(sessionKey);
+  if (saved) return driverNumber == null ? saved.laps : saved.laps.filter((lap) => lap.driver_number === driverNumber);
   const params: QueryParams = { session_key: sessionKey };
   if (driverNumber != null) params.driver_number = driverNumber;
   const laps = await allowMissing(requestOpenF1<OpenF1Lap[]>("/laps", params));
@@ -483,6 +649,8 @@ export async function getSessionLaps(sessionKey: number, driverNumber?: number):
 }
 
 export async function getSessionStints(sessionKey: number): Promise<OpenF1Stint[]> {
+  const saved = await snapshotForSession(sessionKey);
+  if (saved) return saved.stints;
   const stints = await allowMissing(requestOpenF1<OpenF1Stint[]>("/stints", { session_key: sessionKey }));
   return stints ?? [];
 }
@@ -492,6 +660,8 @@ export async function getSessionPit(
   sessionKey: number,
   opts: { persist?: boolean } = {},
 ): Promise<OpenF1Pit[]> {
+  const saved = await snapshotForSession(sessionKey);
+  if (saved) return saved.pit;
   const stops = await allowMissing(
     requestOpenF1<OpenF1Pit[]>("/pit", { session_key: sessionKey }, opts),
   );
@@ -499,6 +669,8 @@ export async function getSessionPit(
 }
 
 export async function getSessionRaceControl(sessionKey: number): Promise<OpenF1RaceControl[]> {
+  const saved = await snapshotForSession(sessionKey);
+  if (saved) return saved.raceControl;
   const messages = await allowMissing(
     requestOpenF1<OpenF1RaceControl[]>("/race_control", { session_key: sessionKey }),
   );
