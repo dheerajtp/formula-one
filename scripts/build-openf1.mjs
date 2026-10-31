@@ -121,7 +121,7 @@ async function main() {
       }
       const round = Number(race.round);
       const file = resolve(OUT, String(season), `${round}.json`);
-      if (!FORCE && existsSync(file) && index.has(session.session_key)) continue;
+      if (!FORCE && existsSync(file) && index.get(session.session_key)?.circuitId) continue;
 
       process.stdout.write(`  ${season} R${round} ${race.raceName} … `);
       const params = { session_key: session.session_key };
@@ -150,7 +150,7 @@ async function main() {
         raceControl,
       };
       await writeFile(file, JSON.stringify(snapshot));
-      index.set(session.session_key, { season, round, session });
+      index.set(session.session_key, { season, round, circuitId: race.Circuit.circuitId, session });
       await writeIndex(index);
       written += 1;
       console.log(`${((await stat(file)).size / 1024).toFixed(0)} KB`);

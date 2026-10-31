@@ -403,6 +403,8 @@ export async function requestOpenF1<T>(
 interface SnapshotIndexRow {
   season: number;
   round: number;
+  /** Jolpica circuit id, so a race not yet run can find its venue's saved history. */
+  circuitId?: string;
   session: OpenF1Session;
 }
 
@@ -437,6 +439,15 @@ export function loadSnapshotIndex(): Promise<SnapshotIndexRow[]> {
     })
     .catch(() => []);
   return snapshotIndex;
+}
+
+/** Saved race sessions at a Jolpica circuit that started before `beforeIso`, newest first. */
+export async function savedRaceSessionsAt(circuitId: string, beforeIso: string): Promise<OpenF1Session[]> {
+  const before = Date.parse(beforeIso);
+  return (await loadSnapshotIndex())
+    .filter((row) => row.circuitId === circuitId && Date.parse(row.session.date_start) < before)
+    .map((row) => row.session)
+    .sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
 }
 
 async function snapshotForSession(sessionKey: number): Promise<ExpandedSnapshot | null> {

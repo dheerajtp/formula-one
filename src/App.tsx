@@ -218,7 +218,7 @@ export default function App() {
           <a href="https://openf1.org/" className="underline hover:text-foreground" target="_blank" rel="noreferrer">
             OpenF1
           </a>{" "}
-          for completed sessions, including published stationary pit-stop times. Real-time telemetry is not included because OpenF1 live access is a paid service; the
+          for completed sessions, including published stationary pit-stop times; completed race sessions are also saved in the site so these pages keep working while OpenF1 pauses free access during live sessions. Real-time telemetry is not included because OpenF1 live access is a paid service; the
           Race page shows published session data only. Replays are reconstructed from official lap timing. Qualifying has no public lap-by-lap feed at all, so it is shown as the official Q1/Q2/Q3 board.
         </p>
       </footer>

@@ -25,11 +25,11 @@ Master plan: [`../../PLAN.md`](../../PLAN.md) · Builds on: plans 01, 03, 04, 05
 | A9 | **Honesty and attribution.** Snapshot data is OpenF1's own data; the footer and README say that completed sessions are cached in the site for availability. Snapshot files carry `generatedAt`; nothing in them is edited or derived. |
 
 ## Status
-- [ ] 01 — Mobile header
-- [ ] 02 — OpenF1 paused state
-- [ ] 03 — IndexedDB response store
+- [x] 01 — Mobile header
+- [x] 02 — OpenF1 paused state
+- [x] 03 — IndexedDB response store
 - [ ] 04 — Session snapshot builder
-- [ ] 05 — Snapshot-first client and view fallbacks
+- [x] 05 — Snapshot-first client and view fallbacks
 - [ ] 06 — Acceptance QA
 
 ## Dependencies and parallel tracks
