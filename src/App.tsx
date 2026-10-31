@@ -2,20 +2,28 @@ import { useEffect, useState } from "react";
 import { useRoute } from "@/lib/router";
 import { Home } from "./pages/Home";
 import { CalendarPage } from "./pages/Calendar";
-import { RacePage } from "./pages/Race";
+import { RacePage, type Tab } from "./pages/Race";
 import { ReplayPage } from "./pages/Replay";
 import { QualifyingPage } from "./pages/Qualifying";
 import { DriversPage } from "./pages/Drivers";
 import { DriverPage } from "./pages/Driver";
 import { TeamsPage } from "./pages/Teams";
 import { WeekendPage } from "./pages/Weekend";
+import { CircuitsPage } from "./pages/Circuits";
+import { RecordsPage } from "./pages/Records";
+import { CircuitPage } from "./pages/Circuit";
 import { getCalendar } from "@/lib/jolpica";
 import { browserZone, setZoneMode, useZoneMode, zoneShort, type ZoneMode } from "@/lib/timezone";
+
+/** Optional `#/race/{season}/{round}/{tab}` segments that open a Race tab directly. */
+const RACE_TAB_SEGMENTS: Record<string, Tab | undefined> = { telemetry: "Telemetry", strategy: "Strategy" };
 
 const NAV = [
   { href: "#/", label: "Season" },
   { href: "#/weekend", label: "Weekend" },
   { href: "#/calendar", label: "Calendar" },
+  { href: "#/circuits", label: "Circuits" },
+  { href: "#/records", label: "Records" },
   { href: "#/drivers", label: "Drivers" },
   { href: "#/teams", label: "Teams" },
 ];
@@ -78,7 +86,12 @@ export default function App() {
           />
         )}
         {route.name === "race" && (
-          <RacePage season={Number(route.params.season)} round={Number(route.params.round)} />
+          <RacePage
+            key={window.location.hash}
+            season={Number(route.params.season)}
+            round={Number(route.params.round)}
+            initialTab={RACE_TAB_SEGMENTS[route.params.tab ?? ""]}
+          />
         )}
         {route.name === "replay" && (
           <ReplayPage season={Number(route.params.season)} round={Number(route.params.round)} />
@@ -91,6 +104,11 @@ export default function App() {
           <DriverPage driverId={route.params.driverId} />
         )}
         {route.name === "teams" && <TeamsPage season={season} />}
+        {route.name === "circuits" && <CircuitsPage season={season} />}
+        {route.name === "records" && <RecordsPage season={season} />}
+        {route.name === "circuit" && (
+          <CircuitPage key={route.params.circuitId} circuitId={route.params.circuitId} season={season} />
+        )}
         {route.name === "notfound" && (
           <p className="text-sm text-muted-foreground">
             That page does not exist. <a className="text-primary underline" href="#/">Back to the season</a>.
@@ -121,9 +139,12 @@ export default function App() {
           (MIT). Tyre allocations sourced from race reports; see each race page.
         </p>
         <p className="mt-2">
-          Replays are reconstructed from official lap timing. Wheel-by-wheel telemetry (speed, gear,
-          throttle, DRS) is no longer published on a free feed, so those readouts are omitted rather than estimated.
-          Qualifying has no public lap-by-lap feed at all, so it is shown as the official Q1/Q2/Q3 board.
+          Session telemetry and tyre compounds come from{" "}
+          <a href="https://openf1.org/" className="underline hover:text-foreground" target="_blank" rel="noreferrer">
+            OpenF1
+          </a>{" "}
+          for completed sessions, including published stationary pit-stop times. Real-time telemetry is not included because OpenF1 live access is a paid service; the
+          Race page shows published session data only. Replays are reconstructed from official lap timing. Qualifying has no public lap-by-lap feed at all, so it is shown as the official Q1/Q2/Q3 board.
         </p>
       </footer>
     </div>
@@ -173,7 +194,9 @@ function isActive(href: string, route: ReturnType<typeof useRoute>) {
       ? "calendar"
       : route.name === "driver"
         ? "drivers"
-        : route.name;
+        : route.name === "circuit"
+          ? "circuits"
+          : route.name;
   return href === `#/${section}`;
 }
 

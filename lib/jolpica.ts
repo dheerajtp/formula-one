@@ -99,6 +99,34 @@ export interface CareerRaceResult extends RaceResult {
   date: string;
 }
 
+/** One race held at a circuit, reduced to what a circuit profile shows: who won and when. */
+export interface CircuitEdition {
+  season: number;
+  round: number;
+  raceName: string;
+  date: string;
+  circuit: Circuit;
+  winner: DriverRef;
+  team: ConstructorRef;
+  /** Winning time as published; absent when the race report only carries a status. */
+  time?: string;
+  status: string;
+}
+
+/**
+ * One round's official fastest race lap: the race wrapper plus the single result
+ * row the feed ranks first. `result.FastestLap` carries the lap, the timing string
+ * and, where the feed publishes it, the average speed.
+ */
+export interface RaceFastestLap {
+  season: number;
+  round: number;
+  raceName: string;
+  date: string;
+  circuit: Circuit;
+  result: RaceResult;
+}
+
 export interface Lap {
   /** 1-based lap number */
   number: number;
@@ -114,7 +142,17 @@ export interface PitStop {
   stop: string;
   lap: string;
   time: string;
+  /** Published pit-lane time in seconds, entry to exit; not a stationary crew stop. */
   duration: string;
+}
+
+/** A pit stop tagged with the round it belongs to, which the per-race endpoint only carries on the wrapper. */
+export interface SeasonPitStop extends PitStop {
+  season: number;
+  round: number;
+  raceName: string;
+  date: string;
+  circuitId: string;
 }
 
 export interface QualifyingResult {
@@ -162,7 +200,12 @@ async function request<T>(path: string, opts: { persist?: boolean } = {}): Promi
     }
   }
   const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`F1 data request failed (${res.status}) for ${path}`);
+  if (!res.ok) {
+    const error = new Error(`F1 data request failed (${res.status}) for ${path}`);
+    // The status and the feed's own wait hint ride along so `withRetry` can tell a
+    // rate-limit refusal from a real failure and honour what the server asked for.
+    throw Object.assign(error, { status: res.status, retryAfterMs: retryAfter(res) });
+  }
   const json = (await res.json()) as T;
   // An empty race table usually means a session the feed has not written yet, so
   // it must not outlive the request that asked for it. That is what lets the
@@ -172,6 +215,16 @@ async function request<T>(path: string, opts: { persist?: boolean } = {}): Promi
     if (opts.persist) writePersisted(CACHE_KEY + url, json);
   }
   return json;
+}
+
+/** `Retry-After` arrives either as seconds or as an HTTP date; both become milliseconds. */
+function retryAfter(res: Response): number {
+  const header = res.headers.get("retry-after");
+  if (!header) return 0;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
 }
 
 function isEmptyTable(value: unknown): boolean {
@@ -201,14 +254,22 @@ async function mapPool<In, Out>(
   return out;
 }
 
-/** The feed occasionally answers a burst with a refusal that clears on its own. */
+/**
+ * The feed occasionally answers a burst with a refusal that clears on its own.
+ * A 429 says how long to wait, so that hint wins over the flat backoff; a capped
+ * fallback keeps a missing or absurd hint from stalling the request. A refusal
+ * without a header still gets a longer wait than a plain transport error.
+ */
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   for (let i = 1; ; i++) {
     try {
       return await fn();
     } catch (error) {
       if (i >= attempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 400 * i));
+      const throttled = (error as { status?: number } | null)?.status === 429;
+      const hint = (error as { retryAfterMs?: number } | null)?.retryAfterMs ?? 0;
+      const wait = Math.max((throttled ? 1000 : 400) * i, Math.min(hint, 10_000));
+      await new Promise((resolve) => setTimeout(resolve, wait));
     }
   }
 }
@@ -364,6 +425,44 @@ export async function getPitStops(season: number, round: number): Promise<PitSto
   return body.MRData.RaceTable?.Races?.[0]?.PitStops ?? [];
 }
 
+/**
+ * Every published pit-lane transit row of a season, tagged with the round it
+ * belongs to.
+ *
+ * The feed refuses a season-wide pitstop query ("Missing one of the required
+ * parameters ['season_year', 'race_round']"), so this is one request per round
+ * that has already started, four in flight and retried. `duration` stays the
+ * published seconds string: it is the pit-lane time from entry to exit, not a
+ * stationary crew stop.
+ */
+export async function getSeasonPitStops(season: number): Promise<SeasonPitStop[]> {
+  const calendar = await getCalendar(season);
+  const now = Date.now();
+  const raced = calendar
+    .filter((race) => (raceStartDate(race) ?? utcDateTime(race.date)).getTime() <= now)
+    .sort((a, b) => Number(a.round) - Number(b.round));
+  if (raced.length === 0) return [];
+
+  const perRound = await mapPool(raced, 4, (race) =>
+    withRetry(() => getPitStops(season, Number(race.round))),
+  );
+
+  const rows: SeasonPitStop[] = [];
+  raced.forEach((race, i) => {
+    for (const stop of perRound[i]) {
+      rows.push({
+        ...stop,
+        season,
+        round: Number(race.round),
+        raceName: race.raceName,
+        date: race.date,
+        circuitId: race.Circuit.circuitId,
+      });
+    }
+  });
+  return rows;
+}
+
 interface LapRow {
   number: string;
   Timings?: { driverId: string; time?: string; position?: string }[];
@@ -455,4 +554,132 @@ export async function getDriverCareerResults(driverId: string): Promise<CareerRa
 export function raceStartDate(race: Race): Date | null {
   if (!race.date) return null;
   return utcDateTime(race.date, race.time);
+}
+
+type CircuitHistoryBody = {
+  MRData: {
+    total: string;
+    RaceTable?: {
+      Races: {
+        season: string;
+        round: string;
+        raceName: string;
+        date: string;
+        Circuit: Circuit;
+        Results?: RaceResult[];
+      }[];
+    };
+  };
+};
+
+/**
+ * Every race held at a circuit, oldest first, by asking for the winner of each
+ * one the feed records. The endpoint pages by race, so long-serving venues such
+ * as Monza need more than one request.
+ */
+export async function getCircuitHistory(circuitId: string): Promise<CircuitEdition[]> {
+  const path = `/circuits/${circuitId}/results/1.json`;
+  const first = await request<CircuitHistoryBody>(`${path}?limit=100&offset=0`, { persist: true });
+  const total = Number(first.MRData.total);
+  const bodies = [first];
+  for (let offset = 100; offset < total; offset += 100) {
+    bodies.push(await request<CircuitHistoryBody>(`${path}?limit=100&offset=${offset}`, { persist: true }));
+  }
+
+  return bodies
+    .flatMap((body) => body.MRData.RaceTable?.Races ?? [])
+    .flatMap((race) => {
+      const winner = race.Results?.[0];
+      if (!winner) return [];
+      return [
+        {
+          season: Number(race.season),
+          round: Number(race.round),
+          raceName: race.raceName,
+          date: race.date,
+          circuit: race.Circuit,
+          winner: winner.Driver,
+          team: winner.Constructor,
+          time: winner.Time?.time,
+          status: winner.status,
+        },
+      ];
+    })
+    .sort((a, b) => a.date.localeCompare(b.date) || a.round - b.round);
+}
+
+interface FastestLapRace {
+  season: string;
+  round: string;
+  raceName: string;
+  date: string;
+  Circuit: Circuit;
+  Results?: RaceResult[];
+}
+
+type FastestLapBody = { MRData: { total: string; RaceTable?: { Races: FastestLapRace[] } } };
+
+/** The endpoint's page size; both fastest-lap resources page by race. */
+const FASTEST_LAP_PAGE = 100;
+
+/**
+ * The official fastest race lap is the result row the feed ranks first. A few
+ * older editions carry the lap on the winner's row without a rank, so the first
+ * row that has a `FastestLap` is the fallback; a race with neither is skipped
+ * rather than filled in.
+ */
+function fastestLapRow(race: FastestLapRace): RaceFastestLap | null {
+  const results = race.Results ?? [];
+  const result =
+    results.find((row) => row.FastestLap?.rank === "1") ?? results.find((row) => row.FastestLap);
+  if (!result) return null;
+  return {
+    season: Number(race.season),
+    round: Number(race.round),
+    raceName: race.raceName,
+    date: race.date,
+    circuit: race.Circuit,
+    result,
+  };
+}
+
+/**
+ * Walk every page of a fastest-lap resource and flatten it to one row per race.
+ * The memory cache is the right lifetime: a new round appears mid-weekend, so
+ * these answers must not be persisted.
+ */
+async function fastestLapRows(path: string): Promise<RaceFastestLap[]> {
+  const first = await request<FastestLapBody>(`${path}?limit=${FASTEST_LAP_PAGE}&offset=0`);
+  const total = Number(first.MRData.total);
+  const bodies = [first];
+  for (let offset = 0; offset + FASTEST_LAP_PAGE < total; offset += FASTEST_LAP_PAGE) {
+    bodies.push(
+      await request<FastestLapBody>(
+        `${path}?limit=${FASTEST_LAP_PAGE}&offset=${offset + FASTEST_LAP_PAGE}`,
+      ),
+    );
+  }
+
+  return bodies
+    .flatMap((body) => body.MRData.RaceTable?.Races ?? [])
+    .flatMap((race) => {
+      const row = fastestLapRow(race);
+      return row ? [row] : [];
+    });
+}
+
+/** One row per round: the official fastest race lap of the season, in round order. */
+export async function getSeasonFastestLaps(season: number): Promise<RaceFastestLap[]> {
+  const rows = await fastestLapRows(`/${season}/fastest/1/results.json`);
+  return rows.sort((a, b) => a.round - b.round);
+}
+
+/**
+ * Every race edition at a circuit for which the feed records a fastest lap,
+ * oldest first. The endpoint pages by race, so long-serving venues such as Monaco
+ * need more than one request.
+ */
+export async function getCircuitFastestLaps(circuitId: string): Promise<RaceFastestLap[]> {
+  const rows = await fastestLapRows(`/circuits/${circuitId}/fastest/1/results.json`);
+  return rows.sort((a, b) => a.date.localeCompare(b.date) || a.round - b.round);
 }

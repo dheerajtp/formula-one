@@ -12,6 +12,9 @@ export interface Route {
     | "driver"
     | "drivers"
     | "teams"
+    | "circuits"
+    | "circuit"
+    | "records"
     | "notfound";
   params: Record<string, string>;
 }
@@ -22,11 +25,15 @@ const PATTERNS: [RegExp, Route["name"], string[]][] = [
   [/^\/weekend\/?$/, "weekend", []],
   [/^\/weekend\/(\d+)\/(\d+)\/?$/, "weekend", ["season", "round"]],
   [/^\/race\/(\d+)\/(\d+)\/?$/, "race", ["season", "round"]],
+  [/^\/race\/(\d+)\/(\d+)\/(telemetry|strategy)\/?$/, "race", ["season", "round", "tab"]],
   [/^\/replay\/(\d+)\/(\d+)\/?$/, "replay", ["season", "round"]],
   [/^\/qualifying\/(\d+)\/(\d+)\/?$/, "qualifying", ["season", "round"]],
   [/^\/drivers\/?$/, "drivers", []],
   [/^\/drivers\/([\w-]+)\/?$/, "driver", ["driverId"]],
   [/^\/teams\/?$/, "teams", []],
+  [/^\/circuits\/?$/, "circuits", []],
+  [/^\/circuits\/([\w-]+)\/?$/, "circuit", ["circuitId"]],
+  [/^\/records\/?$/, "records", []],
 ];
 
 function parse(hash: string): Route {

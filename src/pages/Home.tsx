@@ -181,7 +181,17 @@ function RaceBillboard({
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{race.raceName}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {race.Circuit.circuitName} · {race.Circuit.Location.locality}, {race.Circuit.Location.country}
+            {CIRCUITS.has(race.Circuit.circuitId) ? (
+              <a
+                href={`#/circuits/${race.Circuit.circuitId}`}
+                className="underline decoration-border underline-offset-2 hover:text-foreground"
+              >
+                {race.Circuit.circuitName}
+              </a>
+            ) : (
+              race.Circuit.circuitName
+            )}{" "}
+            · {race.Circuit.Location.locality}, {race.Circuit.Location.country}
           </p>
           <p className="tnum mt-3 text-sm">
             {start ? formatDateTime(race.date, race.time, timeZone) : formatDate(race.date)}{" "}

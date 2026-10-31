@@ -22,6 +22,12 @@ npm run preview
 
 The build fixes `NODE_ENV=production` before loading Vite, independently of the terminal environment. It checks the frontend and bundled component types and emits `dist/index.html` and assets. `npm run preview` serves this output locally. Reuse passing checks while source is unchanged; no additional unit-test suite or browser QA is required by the template.
 
+## Records
+
+- `#/records` has two tabs. **Lap records** lists each round's official race fastest lap (Jolpica), a fastest-lap awards leaderboard and every driver's fastest lap for a chosen round. These are race laps, not qualifying.
+- **Pit stops** shows two different measures. *Pit-lane transit* is Jolpica's official pit duration from pit entry to pit exit, compared only within one race. *Crew stops* are OpenF1's `stop_duration` (stationary time) where published, with how many of the season's pit rows publish one.
+- Each circuit page (`#/circuits/{id}`) has a *Fastest race lap here* panel built from every edition the feed records a fastest lap for.
+
 ## Optional Function
 
 The default page is entirely static and does not call a Function. For server behavior, adapt the public, credential-free example in `functions/handler.ts`. `functions/index.ts` is the Deno deployment entry point. Check `deno --version` before using a separate terminal for:
@@ -54,6 +60,13 @@ The Sites tools prepare artifacts and generate the publication descriptor; publi
 For a new database-backed React page, follow the installed `sites-building` Skill's `references/function-backend.md`. Its assembled `assets/function-backend/` example includes `Notes.tsx`, Function routes and a schema using the platform's private database credentials. For a runnable records-and-attachments workbench, use that Skill's `references/records-example.md`; its setup command assembles a new project from this starter and keeps local fixtures outside deployment outputs. Preserve and adapt its application identity and ownership checks before exposing private records. `references/database.md`, `assets/database-react/App.tsx` and `assets/database-function/` are for existing legacy allocations only. These optional assets stay in the Skill rather than being copied into every static project.
 
 For database or Storage, follow the corresponding `sites-building` references and `sites-management` capability workflow. For AI, follow `sites-build-agent-app` and keep Cloud Agents access in the Function. Application credentials belong in server-side Sites Settings; frontend environment variables are public. This starter does not implement visitor login, database permissions, Cloud resource coordination or QCA sessions; add those only for the requested feature using the existing skills.
+
+## Data sources
+
+- [Jolpica F1 API](https://api.jolpi.ca/) — calendar, results, standings, lap positions, official pit stops and circuit history.
+- [OpenF1](https://openf1.org/) — car telemetry, laps, stints/compounds, pit timestamps and race control for completed sessions only. OpenF1 live (real-time) access is a paid service and is not used.
+- [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT) — track geometry and recorded lap lengths.
+- Static tyre allocations in `data/tyres.json`, sourced from race reports (each entry links its source).
 
 See `PROVENANCE.md` and `vendor/` for source attribution and the preserved stylesheet license.
 

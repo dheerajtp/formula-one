@@ -19,6 +19,7 @@ import { CIRCUITS, TYRES, WEATHER, compoundAppearance } from "@/lib/staticData";
 import { useZoneMode, zoneOf, zoneShort } from "@/lib/timezone";
 import { useAsync, useNow } from "@/lib/useAsync";
 import { describeForecast, forecastFor } from "@/lib/weather";
+import { WeekendStrategyPanel } from "./WeekendStrategy";
 
 export function WeekendPage({ season, round }: { season: number; round?: number }) {
   const now = useNow(30000);
@@ -89,7 +90,17 @@ function Weekend({
             <div className="min-w-0 flex-1">
               <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{race.raceName}</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {race.Circuit.circuitName} · {race.Circuit.Location.locality}, {race.Circuit.Location.country}
+                {circuit ? (
+                  <a
+                    href={`#/circuits/${race.Circuit.circuitId}`}
+                    className="underline decoration-border underline-offset-2 hover:text-foreground"
+                  >
+                    {race.Circuit.circuitName}
+                  </a>
+                ) : (
+                  race.Circuit.circuitName
+                )}{" "}
+                · {race.Circuit.Location.locality}, {race.Circuit.Location.country}
               </p>
 
               {state.live ? (
@@ -241,6 +252,8 @@ function Weekend({
         </Panel>
 
         <Conditions race={race} circuit={circuit} raceStart={raceStart} now={now} />
+
+        <WeekendStrategyPanel key={`${season}:${round}`} season={season} round={round} race={race} racePhase={racePhase} />
 
         <Panel title="What this page can honestly show">
           <p className="text-[11px] leading-relaxed text-muted-foreground">{LIVE_FEED_UNAVAILABLE}</p>

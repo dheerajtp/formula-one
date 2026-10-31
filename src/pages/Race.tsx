@@ -10,18 +10,19 @@ import {
   getPitStops,
   getRaceResults,
   type Lap,
-  type PitStop,
   type RaceResult,
 } from "@/lib/jolpica";
 import { CIRCUITS, TYRES, WEATHER, compoundAppearance } from "@/lib/staticData";
 import { useAsync } from "@/lib/useAsync";
 import { QualifyingBoard } from "./Qualifying";
+import { StrategyPanel } from "./Strategy";
+import { TelemetryPanel } from "./Telemetry";
 
-const TABS = ["Result", "Qualifying", "Lap chart", "Pit stops", "Tyres"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = ["Result", "Qualifying", "Lap chart", "Telemetry", "Strategy"] as const;
+export type Tab = (typeof TABS)[number];
 
-export function RacePage({ season, round }: { season: number; round: number }) {
-  const [tab, setTab] = useState<Tab>("Result");
+export function RacePage({ season, round, initialTab }: { season: number; round: number; initialTab?: Tab }) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? "Result");
   const timeZone = zoneOf(useZoneMode());
   const calendar = useAsync(() => getCalendar(season), [season]);
   const race = (calendar.data ?? []).find((r) => Number(r.round) === round);
@@ -46,7 +47,17 @@ export function RacePage({ season, round }: { season: number; round: number }) {
             </p>
             <h1 className="mt-0.5 text-2xl font-bold leading-tight sm:text-3xl">{race.raceName}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {race.Circuit.circuitName} · {race.Circuit.Location.locality}, {race.Circuit.Location.country} ·{" "}
+              {circuit ? (
+                <a
+                  href={`#/circuits/${race.Circuit.circuitId}`}
+                  className="underline decoration-border underline-offset-2 hover:text-foreground"
+                >
+                  {race.Circuit.circuitName}
+                </a>
+              ) : (
+                race.Circuit.circuitName
+              )}{" "}
+              · {race.Circuit.Location.locality}, {race.Circuit.Location.country} ·{" "}
               {race.time ? formatEventDate(race.date, race.time, timeZone) : formatDate(race.date)}
               {race.time && ` · lights out ${formatClock(race.date, race.time, timeZone)}`}
             </p>
@@ -125,20 +136,19 @@ export function RacePage({ season, round }: { season: number; round: number }) {
       {tab === "Result" && <ResultTable season={season} round={round} />}
       {tab === "Qualifying" && <QualifyingBoard season={season} round={round} race={race} />}
       {tab === "Lap chart" && <LapSection season={season} round={round} />}
-      {tab === "Pit stops" && <PitStopSection season={season} round={round} />}
-      {tab === "Tyres" && <TyreSection season={season} round={round} raceName={race.raceName} />}
+      {tab === "Telemetry" && <TelemetryPanel season={season} round={round} race={race} />}
+      {tab === "Strategy" && <StrategyPanel season={season} round={round} race={race} />}
     </div>
   );
 }
 
 function useRaceData(season: number, round: number) {
   return useAsync(async () => {
-    const results = await getRaceResults(season, round);
-    const [lapsByDriver, pitStops] = await Promise.all([
+    const [results, lapsByDriver] = await Promise.all([
+      getRaceResults(season, round),
       getLapsByDriver(season, round),
-      getPitStops(season, round),
     ]);
-    return { results, lapsByDriver, pitStops };
+    return { results, lapsByDriver };
   }, [season, round]);
 }
 
@@ -326,151 +336,5 @@ function PositionChart({ series }: { series: PositionSeries[] }) {
         </text>
       ))}
     </svg>
-  );
-}
-
-function PitStopSection({ season, round }: { season: number; round: number }) {
-  const { data, loading, error } = useRaceData(season, round);
-  if (loading) return <Loading label="Loading pit stops" />;
-  if (error) return <ErrorBlock message={error} />;
-  const stops = data?.pitStops ?? [];
-  if (!stops.length) return <Empty>No pit stops recorded for this round.</Empty>;
-
-  const byDriver = new Map<string, PitStop[]>();
-  for (const stop of stops) {
-    const list = byDriver.get(stop.driverId) ?? [];
-    list.push(stop);
-    byDriver.set(stop.driverId, list);
-  }
-  const results = data?.results ?? [];
-  const totalLaps = Math.max(1, ...results.map((r) => Number(r.laps) || 0));
-
-  return (
-    <Panel title="Pit stop windows" bodyClassName="p-3">
-      <div className="flex flex-col gap-2">
-        {results
-          .filter((r) => byDriver.has(r.Driver.driverId))
-          .map((r) => {
-            const driverStops = [...byDriver.get(r.Driver.driverId)!].sort((a, b) => Number(a.lap) - Number(b.lap));
-            const color = teamColor(r.Constructor.constructorId);
-            return (
-              <div key={r.Driver.driverId} className="grid grid-cols-[7.5rem_1fr] items-center gap-3">
-                <span className="truncate text-xs">
-                  <span className="tnum mr-1 text-muted-foreground">P{r.position}</span>
-                  {r.Driver.code}
-                </span>
-                <div className="relative h-5 bg-muted" title={`${driverStops.length} stops`}>
-                  {driverStops.map((stop, i) => (
-                    <span
-                      key={stop.stop}
-                      className="absolute top-0 h-full w-[2px]"
-                      style={{ left: `${(Number(stop.lap) / totalLaps) * 100}%`, background: color }}
-                      title={`Stop ${i + 1} on lap ${stop.lap} — ${stop.duration}s`}
-                    />
-                  ))}
-                  <span className="tnum absolute right-1 top-0.5 text-[10px] text-muted-foreground">
-                    {driverStops.length} stop{driverStops.length > 1 ? "s" : ""}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-      </div>
-      <p className="mt-3 text-[11px] text-muted-foreground">
-        Each mark is an official pit stop, placed at the lap it happened. Hover for the stationary time.
-      </p>
-    </Panel>
-  );
-}
-
-function TyreSection({ season, round, raceName }: { season: number; round: number; raceName: string }) {
-  const { data, loading, error } = useRaceData(season, round);
-  const allocation = TYRES.get(raceName);
-
-  if (loading) return <Loading label="Loading stints" />;
-  if (error) return <ErrorBlock message={error} />;
-  const results = data?.results ?? [];
-  if (!results.length) return <Empty>No stint data for this round.</Empty>;
-
-  const stops = new Map<string, PitStop[]>();
-  for (const stop of data?.pitStops ?? []) {
-    const list = stops.get(stop.driverId) ?? [];
-    list.push(stop);
-    stops.set(stop.driverId, list);
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Panel title="Race allocation" bodyClassName="p-3">
-        {allocation ? (
-          <div className="flex flex-wrap items-center gap-3">
-            {[
-              { code: allocation.hard, role: "Hard" },
-              { code: allocation.medium, role: "Medium" },
-              { code: allocation.soft, role: "Soft" },
-            ].map(({ code, role }) => {
-              const look = compoundAppearance(code, allocation);
-              return (
-                <span key={code} className="flex items-center gap-2 border border-border px-2 py-1">
-                  <span className="h-4 w-4 rounded-full border border-black/30" style={{ background: look.color }} aria-hidden />
-                  <span className="text-sm font-semibold">{role}</span>
-                  <span className="tnum text-xs text-muted-foreground">{code}</span>
-                </span>
-              );
-            })}
-            <a href={allocation.source} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline">
-              source
-            </a>
-          </div>
-        ) : (
-          <Empty>The compound allocation for this race has not been published yet.</Empty>
-        )}
-      </Panel>
-
-      <Panel title="Stints from official pit stops" bodyClassName="p-3">
-        <div className="flex flex-col gap-2">
-          {results.map((r) => {
-            const driverStops = [...(stops.get(r.Driver.driverId) ?? [])].sort((a, b) => Number(a.lap) - Number(b.lap));
-            const laps = Number(r.laps) || 0;
-            const bounds = [0, ...driverStops.map((s) => Number(s.lap)), laps].filter((v, i, a) => v > 0 && (i === 0 || a[i - 1] !== v));
-            const segments: { start: number; end: number }[] = [];
-            let cursor = 1;
-            for (const b of bounds) {
-              if (b > cursor) segments.push({ start: cursor, end: b - 1 });
-              cursor = b;
-            }
-            if (cursor <= laps) segments.push({ start: cursor, end: laps });
-            const color = teamColor(r.Constructor.constructorId);
-            return (
-              <div key={r.Driver.driverId} className="grid grid-cols-[7.5rem_1fr] items-center gap-3">
-                <span className="truncate text-xs">
-                  <span className="tnum mr-1 text-muted-foreground">P{r.position}</span>
-                  {r.Driver.code}
-                </span>
-                <div className="flex h-5 gap-[2px]" title={`${segments.length} stints`}>
-                  {segments.map((s, i) => (
-                    <span
-                      key={i}
-                      className="flex items-center justify-center text-[9px] font-semibold text-black/70"
-                      style={{
-                        width: `${((s.end - s.start + 1) / Math.max(1, laps)) * 100}%`,
-                        background: color,
-                        opacity: 1 - i * 0.22,
-                      }}
-                    >
-                      {s.end - s.start + 1}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-3 text-[11px] text-muted-foreground">
-          Bar width is stint length in laps. Which specific compound a driver ran is part of the gated timing feed, so
-          stints are shown unlabelled rather than guessed.
-        </p>
-      </Panel>
-    </div>
   );
 }
