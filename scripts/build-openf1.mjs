@@ -157,7 +157,8 @@ async function main() {
     }
   }
 
-  await writeIndex(index);
+  // Rewriting an unchanged index would only bump generatedAt and make the weekly job commit nothing-new.
+  if (written > 0 || !existsSync(resolve(OUT, "index.json"))) await writeIndex(index);
   let bytes = 0;
   for (const row of index.values()) bytes += (await stat(resolve(OUT, String(row.season), `${row.round}.json`))).size;
   console.log(`Done: ${written} new, ${index.size} races saved, ${(bytes / 1024 / 1024).toFixed(1)} MB in public/openf1.`);

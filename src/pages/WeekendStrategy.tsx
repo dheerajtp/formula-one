@@ -52,7 +52,7 @@ export function WeekendStrategyPanel({
   if (state.loading) {
     return (
       <Panel title={TITLE}>
-        <Loading label="Reading past races at this circuit from OpenF1 — the free feed allows 30 requests a minute" />
+        <Loading label="Reading past races at this circuit — saved races load at once; any others come from OpenF1, which allows 30 requests a minute" />
       </Panel>
     );
   }

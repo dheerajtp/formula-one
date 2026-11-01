@@ -65,7 +65,7 @@ For database or Storage, follow the corresponding `sites-building` references an
 
 - [Jolpica F1 API](https://api.jolpi.ca/) — calendar, results, standings, lap positions, official pit stops and circuit history.
 - [OpenF1](https://openf1.org/) — car telemetry, laps, stints/compounds, pit timestamps and race control for completed sessions only. OpenF1 live (real-time) access is a paid service and is not used.
-  OpenF1 pauses all free access while an F1 session is live, so `npm run build-openf1` saves completed race sessions (not car data) to `public/openf1/`; the site reads those first. Run it outside session times.
+  OpenF1 pauses all free access while an F1 session is live, so `npm run build-openf1` saves completed race sessions (not car data) to `public/openf1/`; the site reads those first. Run it outside session times. A GitHub Action (`.github/workflows/openf1-snapshot.yml`) runs it every 6 hours and pushes new races, which redeploys the site; `workflow_dispatch` with `force` rebuilds everything.
 - [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT) — track geometry and recorded lap lengths.
 - Static tyre allocations in `data/tyres.json`, sourced from race reports (each entry links its source).
 

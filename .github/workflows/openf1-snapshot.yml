@@ -1,0 +1,45 @@
+# Saves newly finished OpenF1 race sessions into public/openf1 and pushes them, which
+# triggers the Vercel deploy. Runs every 6 hours; a run during a live F1 session exits
+# on OpenF1's 401 without committing, and the next run catches up.
+name: OpenF1 snapshot
+
+on:
+  schedule:
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild every race file (slow: ~5 requests per race at 30/min)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openf1-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build snapshots
+        run: node scripts/build-openf1.mjs ${{ inputs.force && '--force' || '' }}
+      - name: Commit new races
+        run: |
+          if [ -z "$(git status --porcelain public/openf1)" ]; then
+            echo "Nothing new."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/openf1
+          git commit -m "Save newly finished races from OpenF1"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

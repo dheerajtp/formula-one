@@ -594,13 +594,13 @@ export async function getPriorRaceSessions(
   const before = Date.parse(beforeIso);
   const saved = (await loadSnapshotIndex()).map((row) => row.session).filter((s) => s.circuit_key === circuitKey);
   let fetched: OpenF1Session[] | null = null;
-  try {
+  // Saved races already give this venue's history (the weekly snapshot job keeps the index
+  // current), so the live lookup — slow behind the 30/min queue and dead during a live
+  // session — is only needed for a circuit the snapshot has never seen.
+  if (!saved.length) {
     fetched = await allowMissing(
       requestOpenF1<OpenF1Session[]>("/sessions", { circuit_key: circuitKey, session_name: "Race" }),
     );
-  } catch (error) {
-    // Paused: the saved races at this circuit are still a complete history up to the snapshot.
-    if (!saved.length) throw error;
   }
   const byKey = new Map<number, OpenF1Session>();
   for (const session of [...saved, ...(fetched ?? [])]) byKey.set(session.session_key, session);

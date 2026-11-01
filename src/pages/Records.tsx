@@ -332,7 +332,7 @@ function CrewStops({ season }: { season: number }) {
   if (loading) {
     return (
       <Panel title={title}>
-        <Loading label="Reading every completed OpenF1 race session — the free feed allows 30 requests a minute, so a full season can take a minute or two the first time" />
+        <Loading label="Reading every completed race session — saved races load at once; any others come from OpenF1 at 30 requests a minute, so they can take a minute or two the first time" />
       </Panel>
     );
   }
